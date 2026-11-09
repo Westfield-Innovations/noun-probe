@@ -165,6 +165,44 @@ class PublicationTests(ReaderTestCase):
         self.assert_not_the_publication(9)
 
 
+class CreditTests(ReaderTestCase):
+    def report_for(self, answer):
+        return noun_probe.run(document="d", mode="AUDIT", boundary="b", ask=lambda t: answer)
+
+    def assert_ends_with_credit(self, report):
+        credit = noun_probe.credit().splitlines()
+        self.assertEqual(report.rstrip().splitlines()[-4:], credit)
+
+    def test_report_without_credit_gets_four_lines(self):
+        report = self.report_for("report")
+        self.assert_ends_with_credit(report)
+        for line in noun_probe.credit().splitlines():
+            self.assertEqual(report.splitlines().count(line), 1)
+
+    def test_report_with_full_credit_is_unchanged(self):
+        answer = "report\n\n" + noun_probe.credit()
+        self.assertEqual(self.report_for(answer), answer)
+
+    def test_report_missing_only_the_edition_line_gets_four_lines(self):
+        lines = [l for l in noun_probe.credit().splitlines() if not l.startswith("Edition used")]
+        report = self.report_for("report\n\n" + "\n".join(lines))
+        self.assert_ends_with_credit(report)
+
+    def test_report_with_wrong_edition_gets_four_lines(self):
+        wrong = noun_probe.credit().replace("Edition used: 1", "Edition used: 2")
+        report = self.report_for("report\n\n" + wrong)
+        self.assert_ends_with_credit(report)
+
+    def test_report_with_formatted_credit_gets_four_lines(self):
+        formatted = noun_probe.credit().replace("Edition used: 1", "**Edition used:** 1")
+        report = self.report_for("report\n\n" + formatted)
+        self.assert_ends_with_credit(report)
+
+    def test_credit_far_above_the_end_gets_four_lines(self):
+        answer = "report\n\n" + noun_probe.credit() + "\n\n" + "x" * 2500
+        self.assert_ends_with_credit(self.report_for(answer))
+
+
 class HoldTests(ReaderTestCase):
     def test_one_reading_is_held_for_five_minutes(self):
         clock = [0.0]

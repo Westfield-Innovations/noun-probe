@@ -391,8 +391,14 @@ def prompt(document: str, mode: str, boundary: str, edition: Optional[str] = Non
 
 
 def _with_credit(report: str, publication: Publication) -> str:
-    tail = report[-2000:]
-    if CREATOR_LINE in tail and publication.official_address in tail:
+    """The report with all four credit lines at its end.
+
+    A report is left as it is only when each of the four lines stands as a
+    whole line near its end. Otherwise the four lines are added, even if that
+    repeats some of them: a repeated line is better than a missing one.
+    """
+    near_the_end = {line.strip() for line in report[-2000:].splitlines()}
+    if all(line in near_the_end for line in publication.credit().splitlines()):
         return report
     return report.rstrip() + "\n\n" + publication.credit() + "\n"
 
