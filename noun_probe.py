@@ -23,6 +23,8 @@ What this file never does:
   - It writes nothing to your disk.
   - It contacts no address except the official one.
 
+Install it with `pip install noun-probe`, or copy this one file.
+
 Use it from your own program:
 
     import noun_probe
