@@ -203,6 +203,65 @@ class CreditTests(ReaderTestCase):
         self.assert_ends_with_credit(self.report_for(answer))
 
 
+class EditionLockTests(ReaderTestCase):
+    def setUp(self):
+        super().setUp()
+        self.current = publication(
+            edition=2,
+            words="WORDS 2",
+            connections=[{"label": "Azus", "address": "https://azus.ai"}],
+        )
+        self.standin.serve("source.json", self.current)
+        self.standin.serve(
+            "editions/1/source.json",
+            publication(
+                edition=1,
+                words="WORDS 1",
+                connections=[{"label": "Azus", "address": "https://old.example"}],
+            ),
+        )
+
+    def test_locked_edition_keeps_its_words(self):
+        locked = noun_probe.read(1)
+        self.assertEqual(locked.words, "WORDS 1")
+        self.assertEqual(locked.edition, "1")
+
+    def test_locked_edition_takes_the_current_title_block(self):
+        locked = noun_probe.read(1)
+        self.assertEqual(locked.connections, (("Azus", "https://azus.ai"),))
+        self.assertTrue(locked.title_read_from.endswith("/tools/noun-probe/source.json"))
+
+    def test_changed_link_reaches_a_locked_program_within_five_minutes(self):
+        clock = [0.0]
+        with mock.patch.object(noun_probe.time, "monotonic", lambda: clock[0]):
+            noun_probe.read(1)
+            self.current["connections"] = [{"label": "Azus", "address": "https://new.example"}]
+            self.standin.serve("source.json", self.current)
+            clock[0] = 301.0
+            locked = noun_probe.read(1)
+        self.assertEqual(locked.connections, (("Azus", "https://new.example"),))
+        self.assertEqual(locked.words, "WORDS 1")
+
+    def test_locked_report_names_the_locked_edition(self):
+        report = noun_probe.run(
+            document="d", mode="AUDIT", boundary="b", ask=lambda t: "r", edition=1
+        )
+        self.assertEqual(report.rstrip().splitlines()[-2], "Edition used: 1")
+
+    def test_locked_edition_stops_when_current_file_is_unreachable(self):
+        self.standin.serve("source.json", b"", status=500)
+        with self.assertRaises(noun_probe.NounProbeUnavailable):
+            noun_probe.read(1)
+
+    def test_main_with_edition_shows_both_addresses(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(noun_probe.main(["--edition", "1"]), 0)
+        printed = out.getvalue()
+        self.assertIn(self.standin.base + "editions/1/source.json", printed)
+        self.assertIn(self.standin.base + "source.json", printed)
+
+
 class HoldTests(ReaderTestCase):
     def test_one_reading_is_held_for_five_minutes(self):
         clock = [0.0]

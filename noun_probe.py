@@ -56,7 +56,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, Optional, Tuple
 
 __version__ = "1"
@@ -120,6 +120,9 @@ class Publication:
     tools: Tuple[Tuple[str, str], ...]
     terms: str
     read_from: str
+    # Where the title block (addresses, connections, tools, terms) was read.
+    # For one fixed edition it is the current file, so the credit stays current.
+    title_read_from: str = ""
 
     def credit(self) -> str:
         """The lines that close every report."""
@@ -316,25 +319,44 @@ _held: Dict[str, Tuple[float, Publication]] = {}
 _held_lock = threading.Lock()
 
 
-def read(edition: Optional[str] = None, fresh: bool = False) -> Publication:
-    """Read the official Noun Probe.
-
-    edition=None reads the current edition. edition="3" reads edition 3,
-    which never changes once Westfield has published it.
-    fresh=True reads the address again now instead of using the reading
-    held in memory.
-    """
-    address = _address_for(edition)
-    asked = None if edition is None else str(edition).strip()
+def _held_reading(address: str, edition: Optional[str], fresh: bool) -> Publication:
+    """One address, read again only after HOLD_SECONDS or when fresh."""
     now = time.monotonic()
     with _held_lock:
         kept = _held.get(address)
         if kept and not fresh and now - kept[0] < HOLD_SECONDS:
             return kept[1]
-    publication = _publication(_fetch(address), address, asked)
+    publication = _publication(_fetch(address), address, edition)
     with _held_lock:
         _held[address] = (now, publication)
     return publication
+
+
+def read(edition: Optional[str] = None, fresh: bool = False) -> Publication:
+    """Read the official Noun Probe.
+
+    edition=None reads the current edition. edition="3" (or 3) reads
+    edition 3, whose words never change once Westfield has published it.
+    The title block (the addresses, connections, tools and terms) always
+    comes from the current file, so a changed link reaches a program fixed
+    to an edition too.
+    fresh=True reads the address again now instead of using the reading
+    held in memory.
+    """
+    fixed = None if edition is None else _address_for(edition)
+    current = _held_reading(_address_for(None), None, fresh)
+    if fixed is None:
+        return replace(current, title_read_from=current.read_from)
+    words = _held_reading(fixed, str(edition).strip(), fresh)
+    return replace(
+        words,
+        official_address=current.official_address,
+        toolbox_address=current.toolbox_address,
+        connections=current.connections,
+        tools=current.tools,
+        terms=current.terms,
+        title_read_from=current.read_from,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +458,10 @@ def _status(publication: Publication) -> str:
         CREATOR_LINE,
         "",
         "Read from:         {0}".format(publication.read_from),
+    ]
+    if publication.title_read_from and publication.title_read_from != publication.read_from:
+        lines.append("Title block from:  {0}".format(publication.title_read_from))
+    lines += [
         "Tool:              {0}".format(publication.tool),
         "Edition:           {0}  (issued {1})".format(publication.edition, publication.issued),
     ]
@@ -452,10 +478,13 @@ def _status(publication: Publication) -> str:
     if publication.terms:
         lines.append("Terms of use:")
         lines.extend("  " + line for line in publication.terms.splitlines())
+    two = publication.title_read_from not in ("", publication.read_from)
     lines.extend(
         [
             "",
-            "This reader made one read-only request, to the address above.",
+            "This reader made two read-only requests, to the addresses above."
+            if two
+            else "This reader made one read-only request, to the address above.",
             "It sent no document, no account and no identifier, and it wrote nothing to disk.",
             "The Noun Probe's words were read ({0:,} characters). They are held in memory "
             "only and are not saved.".format(len(publication.words)),
