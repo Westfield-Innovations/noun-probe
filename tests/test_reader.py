@@ -131,6 +131,40 @@ class StopTests(ReaderTestCase):
         self.assertIn("DECLARED MODE: AUDIT", noun_probe.prompt("d", "audit", "b"))
 
 
+class PublicationTests(ReaderTestCase):
+    def assert_not_the_publication(self, edition=None):
+        with self.assertRaises(noun_probe.NounProbeUnavailable):
+            noun_probe.read(edition)
+
+    def test_missing_modes_is_not_the_publication(self):
+        self.standin.serve("source.json", publication(modes=None))
+        self.assert_not_the_publication()
+
+    def test_empty_modes_is_not_the_publication(self):
+        self.standin.serve("source.json", publication(modes=[]))
+        self.assert_not_the_publication()
+
+    def test_other_tool_is_not_the_publication(self):
+        self.standin.serve("source.json", publication(tool="Something Else"))
+        self.assert_not_the_publication()
+
+    def test_missing_terms_is_not_the_publication(self):
+        self.standin.serve("source.json", publication(terms=None))
+        self.assert_not_the_publication()
+
+    def test_terms_as_a_list_are_joined(self):
+        self.standin.serve("source.json", publication(terms=["1. a", "2. b"]))
+        self.assertEqual(noun_probe.read().terms, "1. a\n2. b")
+
+    def test_edition_file_for_another_edition_is_not_the_publication(self):
+        self.standin.serve("editions/2/source.json", publication(edition=1))
+        self.assert_not_the_publication(2)
+
+    def test_missing_edition_served_as_html_stops(self):
+        self.standin.serve("editions/9/source.json", b"<!DOCTYPE html><html></html>")
+        self.assert_not_the_publication(9)
+
+
 class HoldTests(ReaderTestCase):
     def test_one_reading_is_held_for_five_minutes(self):
         clock = [0.0]

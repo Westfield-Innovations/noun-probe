@@ -64,6 +64,7 @@ __version__ = "1"
 __all__ = [
     "OFFICIAL_ADDRESS",
     "CREATOR_LINE",
+    "TOOL",
     "NounProbeUnavailable",
     "Publication",
     "read",
@@ -81,6 +82,9 @@ OFFICIAL_ADDRESS = "https://azus.ai/tools/noun-probe/"
 # The fixed origin line. It travels inside this file, so it is present even
 # when the official address cannot be reached.
 CREATOR_LINE = "Created by Carl D. Hildebrandt · Westfield Innovations LLC"
+
+# The name the publication carries. An answer under any other name is not it.
+TOOL = "Noun Probe"
 
 # How long one read is held in memory before the address is read again.
 # Held in memory only. Nothing is ever written to disk.
@@ -227,17 +231,15 @@ def _fetch(address: str) -> bytes:
     return raw
 
 
-def _text(data: dict, key: str, address: str, required: bool = True) -> str:
+def _text(data: dict, key: str, address: str) -> str:
     value = data.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         value = str(value)
     if isinstance(value, str) and value.strip():
         return value.strip()
-    if required:
-        raise NounProbeUnavailable(
-            _cannot_read(address, "the publication is missing its {0!r}".format(key))
-        )
-    return ""
+    raise NounProbeUnavailable(
+        _cannot_read(address, "the publication is missing its {0!r}".format(key))
+    )
 
 
 def _pairs(data: dict, key: str, first: str, second: str) -> Tuple[Tuple[str, str], ...]:
@@ -251,7 +253,34 @@ def _pairs(data: dict, key: str, first: str, second: str) -> Tuple[Tuple[str, st
     return tuple(found)
 
 
-def _publication(raw: bytes, address: str) -> Publication:
+def _not_the_publication(address: str) -> NounProbeUnavailable:
+    return NounProbeUnavailable(
+        _cannot_read(address, "the answer is not the Noun Probe publication")
+    )
+
+
+def _modes(data: dict, address: str) -> Tuple[str, ...]:
+    """The modes the publication names. A publication always names them."""
+    found = data.get("modes")
+    if not isinstance(found, list) or not found:
+        raise _not_the_publication(address)
+    if not all(isinstance(m, str) and m.strip() for m in found):
+        raise _not_the_publication(address)
+    return tuple(m.strip() for m in found)
+
+
+def _terms(data: dict, address: str) -> str:
+    """The terms of use, one per line. A publication always carries them."""
+    found = data.get("terms")
+    if isinstance(found, list) and all(isinstance(line, str) for line in found):
+        found = "\n".join(line.strip() for line in found if line.strip())
+    if isinstance(found, str) and found.strip():
+        return found.strip()
+    raise _not_the_publication(address)
+
+
+def _publication(raw: bytes, address: str, edition: Optional[str] = None) -> Publication:
+    """The publication in an answer. edition, when given, is the one asked for."""
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
@@ -262,22 +291,24 @@ def _publication(raw: bytes, address: str) -> Publication:
         raise NounProbeUnavailable(
             _cannot_read(address, "the answer was not in the expected form")
         )
-    modes = tuple(
-        str(m).strip() for m in (data.get("modes") or []) if str(m).strip()
-    )
-    return Publication(
+    publication = Publication(
         tool=_text(data, "tool", address),
         edition=_text(data, "edition", address),
         issued=_text(data, "issued", address),
         words=_text(data, "words", address),
         official_address=_text(data, "official_address", address),
         toolbox_address=_text(data, "toolbox_address", address),
-        modes=modes,
+        modes=_modes(data, address),
         connections=_pairs(data, "connections", "label", "address"),
         tools=_pairs(data, "tools", "name", "address"),
-        terms=_text(data, "terms", address, required=False),
+        terms=_terms(data, address),
         read_from=address,
     )
+    if publication.tool != TOOL:
+        raise _not_the_publication(address)
+    if edition is not None and publication.edition != edition:
+        raise _not_the_publication(address)
+    return publication
 
 
 # One reading is held in memory for HOLD_SECONDS, then read again.
@@ -294,12 +325,13 @@ def read(edition: Optional[str] = None, fresh: bool = False) -> Publication:
     held in memory.
     """
     address = _address_for(edition)
+    asked = None if edition is None else str(edition).strip()
     now = time.monotonic()
     with _held_lock:
         kept = _held.get(address)
         if kept and not fresh and now - kept[0] < HOLD_SECONDS:
             return kept[1]
-    publication = _publication(_fetch(address), address)
+    publication = _publication(_fetch(address), address, asked)
     with _held_lock:
         _held[address] = (now, publication)
     return publication
@@ -331,15 +363,14 @@ def _put_together(publication: Publication, document: str, mode: str, boundary: 
     document = _declared("document", document)
     mode = _declared("mode", mode)
     boundary = _declared("boundary", boundary)
-    if publication.modes:
-        allowed = {m.lower(): m for m in publication.modes}
-        if mode.lower() not in allowed:
-            raise ValueError(
-                "The Noun Probe names these modes: {0}. Got: {1!r}".format(
-                    ", ".join(publication.modes), mode
-                )
+    allowed = {m.lower(): m for m in publication.modes}
+    if mode.lower() not in allowed:
+        raise ValueError(
+            "The Noun Probe names these modes: {0}. Got: {1!r}".format(
+                ", ".join(publication.modes), mode
             )
-        mode = allowed[mode.lower()]
+        )
+    mode = allowed[mode.lower()]
     return "\n".join(
         [
             publication.words,
