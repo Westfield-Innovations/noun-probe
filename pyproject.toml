@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,13 +7,13 @@ name = "noun-probe"
 dynamic = ["version"]
 description = "Reader for the Noun Probe. The words are read from https://azus.ai/tools/noun-probe/ each time; none ship in this package."
 readme = "README.md"
-license = { text = "Use is governed by the terms published at https://azus.ai/tools/noun-probe/" }
+# Use is governed by the terms published at https://azus.ai/tools/noun-probe/
+license = "LicenseRef-Westfield-Noun-Probe-Terms"
 requires-python = ">=3.11"
 authors = [{ name = "Westfield Innovations LLC" }]
 keywords = ["ai", "noun-probe", "audit", "language"]
 classifiers = [
     "Intended Audience :: Developers",
-    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

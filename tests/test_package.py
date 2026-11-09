@@ -69,6 +69,13 @@ class PackageTests(unittest.TestCase):
         self.assertNotIn("\nversion =", project)
         self.assertIn('attr = "noun_probe.__version__"', pyproject)
 
+    def test_license_uses_the_current_packaging_form(self):
+        # setuptools stops building a license table or license classifiers
+        # after 2027-02-18; an SPDX expression is the form that stays.
+        pyproject = (ROOT / "pyproject.toml").read_text("utf-8")
+        self.assertRegex(pyproject, r'(?m)^license = "LicenseRef-[A-Za-z0-9.-]+"$')
+        self.assertNotIn("License ::", pyproject)
+
 
 if __name__ == "__main__":
     unittest.main()
