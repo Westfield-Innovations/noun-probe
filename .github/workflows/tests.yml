@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
 
 jobs:
   test:
@@ -31,3 +33,43 @@ jobs:
           python -m build
           python -m pip install dist/*.whl
           cd /tmp && noun-probe --help
+
+  publish:
+    name: Publish to PyPI
+    needs: [test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: pypi
+      url: https://pypi.org/project/noun-probe/
+
+    permissions:
+      id-token: write  # Required for OIDC trusted publishing
+      contents: read   # Required to checkout the repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify release tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(python -c "import noun_probe; print(noun_probe.__version__)")"
+          echo "tag=$TAG package=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Release tag '$GITHUB_REF_NAME' does not match noun_probe.__version__ '$PKG'. Retag the commit that sets the version."
+            exit 1
+          fi
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses OIDC — no API token needed when trusted publishing is configured
+        # Pending publisher set up at: https://pypi.org/manage/account/publishing/
